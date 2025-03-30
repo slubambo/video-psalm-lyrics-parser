@@ -1,11 +1,8 @@
-# To run this script, first install demjson3 if you haven't:
-# pip install demjson3
+# No external libraries needed
 
 import re
-import demjson3
 import json
 
-# Filenames
 json_file = "Songbook.json"
 fixed_json_file = "SongbookFixedSongs.json"
 output_file = "Songbook.txt"
@@ -14,37 +11,40 @@ output_file = "Songbook.txt"
 with open(json_file, "r", encoding="utf-8") as f:
     raw = f.read()
 
-# Step 2: Escape only *real* newlines inside quotes (not double-escape)
-def escape_linebreaks_in_quotes(text):
-    result = []
-    in_string = False
-    buffer = ''
-    for char in text:
-        if char == '"':
-            in_string = not in_string
-        if in_string and char == '\n':
-            buffer += '\\n'
-        elif in_string and char == '\r':
-            buffer += '\\r'
-        else:
-            buffer += char
-    return buffer
+# Step 2: Fix unquoted keys and missing top-level quotes
+# Add quotes to top-level "Songs"
+if raw.startswith("{Songs:"):
+    raw = raw.replace("{Songs:", '{"Songs":', 1)
 
-raw = escape_linebreaks_in_quotes(raw)
+# Fix all keys (even nested ones)
+raw = re.sub(r'([{,])(\s*)([A-Za-z_][\w]*)(\s*):', r'\1\2"\3"\4:', raw)
 
-# Step 3: Parse using demjson3
+# Escape line breaks inside quotes
+def fix_multiline_strings(text):
+    def replacer(match):
+        content = match.group(0)
+        return content.replace('\n', '\\n').replace('\r', '\\r')
+    return re.sub(r'"[^"\\]*(?:\\.[^"\\]*)*"', replacer, text)
+
+raw = fix_multiline_strings(raw)
+
+# Add missing commas between objects
+raw = re.sub(r'\}\s*\{', '},{', raw)
+raw = re.sub(r'\]\s*\[', '],[', raw)
+
+# Optional: Save cleaned version
+with open(fixed_json_file, "w", encoding="utf-8") as f:
+    f.write(raw)
+
+# Step 3: Try parsing using built-in json
 try:
-    data = demjson3.decode(raw)
-except Exception as e:
-    print("❌ Failed to parse using demjson3.")
+    data = json.loads(raw)
+except json.JSONDecodeError as e:
+    print("❌ Failed to parse even after all cleaning.")
     print(f"Error: {e}")
     exit(1)
 
-# Step 4: Save a fixed version
-with open(fixed_json_file, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-
-# Step 5: Convert to readable text
+# Step 4: Convert to readable text
 songs = data.get("Songs", [])
 output_lines = []
 
@@ -73,7 +73,7 @@ for idx, song in enumerate(songs, 1):
             output_lines.append(text)
             output_lines.append("")
 
-# Step 6: Write final text output
+# Step 5: Write final output
 with open(output_file, "w", encoding="utf-8") as f:
     f.write("\n".join(output_lines))
 
