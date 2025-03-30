@@ -1,51 +1,50 @@
+# To run this script, first install demjson3 if you haven't:
+# pip install demjson3
+
 import re
+import demjson3
 import json
 
 # Filenames
-json_file = "Songs.json"
-fixed_json_file = "FixedSongs.json"
-output_file = "Songs.txt"
+json_file = "Songbook.json"
+fixed_json_file = "SongbookFixedSongs.json"
+output_file = "Songbook.txt"
 
 # Step 1: Read raw content
 with open(json_file, "r", encoding="utf-8") as f:
-    raw = f.read().strip()
+    raw = f.read()
 
-# Step 2: Wrap root key with quotes if needed (e.g. Songs:[...] → {"Songs":[...]})
-if raw.startswith("{") and not raw.startswith('{"'):
-    raw = re.sub(r'^{(\s*\w+\s*):', r'{"\1":', raw, 1)
+# Step 2: Escape only *real* newlines inside quotes (not double-escape)
+def escape_linebreaks_in_quotes(text):
+    result = []
+    in_string = False
+    buffer = ''
+    for char in text:
+        if char == '"':
+            in_string = not in_string
+        if in_string and char == '\n':
+            buffer += '\\n'
+        elif in_string and char == '\r':
+            buffer += '\\r'
+        else:
+            buffer += char
+    return buffer
 
-# Step 3: Fix unquoted keys inside the JSON
-raw = re.sub(r'([{,])\s*(\w+)\s*:', r'\1"\2":', raw)
+raw = escape_linebreaks_in_quotes(raw)
 
-# Step 4: Escape control characters and bad quotes
-raw = raw.replace('\r', '\\r').replace('\n', '\\n').replace('\t', '\\t')
-
-# Escape quotes inside strings
-def escape_inner_quotes(match):
-    content = match.group(0)
-    # Don't touch the outer quotes, just escape internal ones
-    return '"' + content[1:-1].replace('"', '\\"') + '"'
-
-raw = re.sub(r'"[^"]*"', escape_inner_quotes, raw)
-
-# Step 5: Add missing commas between objects
-raw = re.sub(r'\}\s*\{', '},{', raw)
-raw = re.sub(r'\]\s*\[', '],[', raw)
-
-# Step 6: Save fixed content for debugging
-with open(fixed_json_file, "w", encoding="utf-8") as f:
-    f.write(raw)
-
-# Step 7: Try parsing JSON
+# Step 3: Parse using demjson3
 try:
-    data = json.loads(raw)
-except json.JSONDecodeError as e:
-    print("❌ Still failed to decode JSON after cleaning.")
+    data = demjson3.decode(raw)
+except Exception as e:
+    print("❌ Failed to parse using demjson3.")
     print(f"Error: {e}")
-    print(f"Check '{fixed_json_file}' to manually inspect.")
     exit(1)
 
-# Step 8: Process songs
+# Step 4: Save a fixed version
+with open(fixed_json_file, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+
+# Step 5: Convert to readable text
 songs = data.get("Songs", [])
 output_lines = []
 
@@ -74,7 +73,7 @@ for idx, song in enumerate(songs, 1):
             output_lines.append(text)
             output_lines.append("")
 
-# Step 9: Write output
+# Step 6: Write final text output
 with open(output_file, "w", encoding="utf-8") as f:
     f.write("\n".join(output_lines))
 
